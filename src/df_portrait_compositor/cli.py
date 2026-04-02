@@ -8,7 +8,7 @@ import random
 import sys
 from pathlib import Path
 
-from df_portrait_compositor import compose_portrait, DwarfAppearanceData
+from df_portrait_compositor import compose_portrait, DwarfAppearanceData, PORTRAIT_RACES
 
 
 # DF color names used in the portrait graphics
@@ -88,13 +88,14 @@ def cmd_demo(args: argparse.Namespace) -> None:
 
     count = args.count
     output = Path(args.output)
+    race = args.race.upper()
 
     if count == 1:
         seed = args.seed or random.randint(0, 100000)
         appearance = _random_appearance(seed)
-        img = compose_portrait(df_install, appearance, scale=args.scale)
+        img = compose_portrait(df_install, appearance, scale=args.scale, race=race)
         img.save(output, "PNG")
-        print(f"Saved {appearance.sex} dwarf portrait to {output} (seed={seed})")
+        print(f"Saved {race.lower()} portrait to {output} (seed={seed})")
     else:
         output.mkdir(parents=True, exist_ok=True)
         base_seed = args.seed or random.randint(0, 100000)
@@ -102,10 +103,10 @@ def cmd_demo(args: argparse.Namespace) -> None:
             seed = base_seed + i
             appearance = _random_appearance(seed)
             path = output / f"portrait_{seed}.png"
-            img = compose_portrait(df_install, appearance, scale=args.scale)
+            img = compose_portrait(df_install, appearance, scale=args.scale, race=race)
             img.save(path, "PNG")
             print(f"  [{i+1}/{count}] {appearance.sex:6s} seed={seed} -> {path}")
-        print(f"Generated {count} portraits in {output}/")
+        print(f"Generated {count} {race.lower()} portraits in {output}/")
 
 
 def cmd_generate(args: argparse.Namespace) -> None:
@@ -147,10 +148,11 @@ def cmd_generate(args: argparse.Namespace) -> None:
         age=appearance_data.get("age", 0),
     )
 
-    img = compose_portrait(df_install, app, scale=args.scale)
+    race = args.race.upper()
+    img = compose_portrait(df_install, app, scale=args.scale, race=race)
     output = Path(args.output)
     img.save(output, "PNG")
-    print(f"Saved portrait to {output}")
+    print(f"Saved {race.lower()} portrait to {output}")
 
 
 def cmd_from_snapshot(args: argparse.Namespace) -> None:
@@ -226,7 +228,8 @@ def cmd_from_snapshot(args: argparse.Namespace) -> None:
             age=citizen.get("age", 0),
         )
 
-        img = compose_portrait(df_install, app, scale=args.scale)
+        race = citizen.get("race", args.race).upper()
+        img = compose_portrait(df_install, app, scale=args.scale, race=race)
         path = output / f"portrait_{cid}.png"
         img.save(path, "PNG")
         print(f"  {name} -> {path}")
@@ -246,6 +249,10 @@ def main() -> None:
     parser.add_argument(
         "--scale", type=int, default=2,
         help="Upscale factor (1=96px, 2=192px, 4=384px). Default: 2",
+    )
+    parser.add_argument(
+        "--race", default="DWARF",
+        help=f"Creature race ({', '.join(sorted(PORTRAIT_RACES))}). Default: DWARF",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)

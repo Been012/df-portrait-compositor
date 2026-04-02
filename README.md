@@ -1,16 +1,18 @@
 # df-portrait-compositor
 
-Generate dwarf portrait images from Dwarf Fortress (Steam/Premium) sprite sheets by parsing the game's graphics definition files, evaluating layer conditions against appearance data, and compositing the matching tiles with palette recoloring.
+Generate portrait images for dwarves, elves, humans, goblins, and kobolds from Dwarf Fortress (Steam/Premium) sprite sheets by parsing the game's graphics definition files, evaluating layer conditions against appearance data, and compositing the matching tiles with palette recoloring.
 
 ## Features
 
-- Parses DF's `graphics_creatures_portrait_dwarf.txt` into structured layer rules
+- **Multi-race support**: generates portraits for DWARF, ELF, HUMAN, GOBLIN, and KOBOLD races
+- Parses DF's `graphics_creatures_portrait_{race}.txt` into structured layer rules
 - **All three age groups**: BABY (age < 1), CHILD (age 1-11), and PORTRAIT (adult 12+) layer sets
 - Evaluates 10+ condition types: caste, tissue color/length/shaping/curliness, body part modifiers (head broadness, nose shape/broadness, eye shape), equipment, syndromes (vampire, zombie, necromancer, ghost), material flags/types, item quality, and randomized part selection
 - BP_MISSING condition support for injury-based layer filtering
 - Implements DF's "first match wins" layer group logic for mutually exclusive alternatives
 - Composites selected tiles onto an RGBA canvas with proper alpha blending
-- Palette recoloring for skin and hair colors using DF's palette PNGs
+- Race-specific palette recoloring for skin and hair colors using DF's per-race palette PNGs
+- Auto-detection of hair palette source row (varies per race -- e.g. human tiles use row 12, dwarves use row 0)
 - **HSV clothing tinting**: clothing layers use HSV color space to apply the item's material/dye color with naturally muted saturation, matching DF's subdued portrait aesthetic
 - **Creature portraits**: load portrait sprites for 500+ creatures across 6 sprite sheets (domestic, surface, aquatic, animal people, and more)
 - Appearance-hash-based caching so portraits only regenerate when the dwarf's look changes
@@ -43,7 +45,7 @@ pip install -e .
 The fastest way to see it in action:
 
 ```bash
-# Generate a random demo portrait
+# Generate a random demo portrait (dwarf by default)
 df-portrait demo
 
 # Generate 10 random portraits in a directory
@@ -51,6 +53,12 @@ df-portrait demo -n 10 -o my_portraits/
 
 # Generate with a specific seed for reproducibility
 df-portrait demo --seed 42
+
+# Generate an elf portrait
+df-portrait --race elf demo
+
+# Generate human portraits
+df-portrait --race human demo -n 5 -o human_portraits/
 
 # Generate from JSON appearance data
 df-portrait generate '{"sex":"female","skin_color":"PEACH","hair_color":"BROWN","hair_length":200,"hair_shaping":"BRAIDED"}'
@@ -68,7 +76,7 @@ df-portrait --df-path "C:\path\to\Dwarf Fortress" demo
 ### Python API
 
 ```python
-from df_portrait_compositor import compose_portrait, DwarfAppearanceData
+from df_portrait_compositor import compose_portrait, DwarfAppearanceData, PORTRAIT_RACES
 
 # Point to your DF install directory
 df_install = r"C:\Program Files (x86)\Steam\steamapps\common\Dwarf Fortress"
@@ -88,9 +96,16 @@ appearance = DwarfAppearanceData(
     random_seed=42,
 )
 
-# Compose and save
+# Compose a dwarf portrait (default)
 img = compose_portrait(df_install, appearance, scale=2)
 img.save("portrait.png")
+
+# Compose an elf portrait
+img = compose_portrait(df_install, appearance, scale=2, race="ELF")
+img.save("elf_portrait.png")
+
+# See all supported races
+print(PORTRAIT_RACES)  # {"DWARF", "ELF", "HUMAN", "GOBLIN", "KOBOLD"}
 ```
 
 ### Child and Baby Portraits
@@ -237,13 +252,14 @@ The indices into `unit.appearance.tissue_length` and `unit.appearance.tissue_sty
 
 ### Core Functions
 
-#### `compose_portrait(df_install, appearance, scale=2)`
+#### `compose_portrait(df_install, appearance, scale=2, race="DWARF")`
 
 Compose a portrait from sprite sheet layers. Automatically selects BABY, CHILD, or PORTRAIT layer set based on `appearance.age`.
 
 - **df_install** (`str`): Path to the Dwarf Fortress installation directory.
 - **appearance** (`DwarfAppearanceData`): Dwarf appearance data for condition matching.
 - **scale** (`int`): Upscale factor. 1 = 96px native, 2 = 192px (default).
+- **race** (`str`): Creature race -- one of DWARF, ELF, HUMAN, GOBLIN, KOBOLD. Default: DWARF.
 - **Returns**: `PIL.Image.Image` (RGBA).
 
 #### `generate_portrait(df_install, unit_id, appearance, cache_dir=None)`
@@ -304,6 +320,10 @@ Evaluate layer rules against appearance data and return matching `SelectedLayer`
 #### `TILE_SIZE`
 
 The native tile size in pixels (96).
+
+#### `PORTRAIT_RACES`
+
+Set of supported race strings: `{"DWARF", "ELF", "HUMAN", "GOBLIN", "KOBOLD"}`.
 
 ## License
 
