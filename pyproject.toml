@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "df-portrait-compositor"
-version = "0.1.0"
+version = "0.2.0"
 description = "Generate dwarf portraits from Dwarf Fortress sprite sheets"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,6 +15,9 @@ authors = [
 dependencies = [
     "Pillow",
 ]
+
+[project.scripts]
+df-portrait = "df_portrait_compositor.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Been012/df-portrait-compositor"

@@ -1,3 +1,18 @@
+Metadata-Version: 2.4
+Name: df-portrait-compositor
+Version: 0.2.0
+Summary: Generate dwarf portraits from Dwarf Fortress sprite sheets
+Author: Been012
+License-Expression: MIT
+Project-URL: Homepage, https://github.com/Been012/df-portrait-compositor
+Project-URL: Repository, https://github.com/Been012/df-portrait-compositor
+Project-URL: Issues, https://github.com/Been012/df-portrait-compositor/issues
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: Pillow
+Dynamic: license-file
+
 # df-portrait-compositor
 
 Generate dwarf portrait images from Dwarf Fortress (Steam/Premium) sprite sheets by parsing the game's graphics definition files, evaluating layer conditions against appearance data, and compositing the matching tiles with palette recoloring.
@@ -33,35 +48,6 @@ pip install -e .
 - A Dwarf Fortress Premium (Steam) installation (for the sprite sheet PNGs and graphics definition file)
 
 ## Quick Start
-
-### CLI
-
-The fastest way to see it in action:
-
-```bash
-# Generate a random demo portrait
-df-portrait demo
-
-# Generate 10 random portraits in a directory
-df-portrait demo -n 10 -o my_portraits/
-
-# Generate with a specific seed for reproducibility
-df-portrait demo --seed 42
-
-# Generate from JSON appearance data
-df-portrait generate '{"sex":"female","skin_color":"PEACH","hair_color":"BROWN","hair_length":200,"hair_shaping":"BRAIDED"}'
-
-# Generate from a df-storyteller snapshot file
-df-portrait from-snapshot path/to/snapshot.json -o portraits/
-
-# Generate for a specific dwarf from a snapshot
-df-portrait from-snapshot path/to/snapshot.json --unit-id 7116
-
-# Specify DF install path (auto-detected on common Steam paths)
-df-portrait --df-path "C:\path\to\Dwarf Fortress" demo
-```
-
-### Python API
 
 ```python
 from df_portrait_compositor import compose_portrait, DwarfAppearanceData
@@ -143,33 +129,21 @@ The `dfhack_scripts/` directory contains debug scripts that demonstrate how to r
 
 The indices into `unit.appearance.tissue_length` and `unit.appearance.tissue_style` vary by sex. The mapping is determined by `caste.bp_appearance.style_part_idx` and `style_layer_idx`, but for the default dwarf creature definition:
 
-**Male** (12 tissue entries):
-| Index | Tissue |
-|-------|--------|
-| 0, 1 | SIDEBURNS |
-| 2 | CHIN_WHISKERS (beard) |
-| 3 | MOUSTACHE |
-| 4, 5 | EYEBROW |
-| 6, 7 | HAIR (scalp) |
-| 8, 9 | CHEEK_WHISKERS (on CHEEK body parts) |
-| 10, 11 | N/A |
+**Male** (caste index 1):
+| Index | Body Part | Tissue |
+|-------|-----------|--------|
+| 0 | HEAD | Hair |
+| 1 | R_CHEEK | Beard (right cheek whiskers) |
+| 2 | L_CHEEK | Beard (left cheek whiskers) |
+| 3 | CHIN | Beard (chin whiskers) |
+| 4 | LIP | Moustache |
+| 5 | R_CHEEK | Sideburns |
+| 6 | L_CHEEK | Sideburns |
 
-**Female** (6 tissue entries):
-| Index | Tissue |
-|-------|--------|
-| 0, 1 | EYEBROW |
-| 2, 3 | HAIR (scalp) |
-| 4, 5 | N/A |
-
-**HEAD body part layer indices** (for `bp_appearance.layer_idx`):
-| Layer | Tissue |
-|-------|--------|
-| 0, 1 | SIDEBURNS |
-| 2 | CHIN_WHISKERS |
-| 3 | MOUSTACHE |
-| 4, 5 | EYEBROW |
-| 6, 7 | HAIR |
-| 8 | SKIN |
+**Female** (caste index 0):
+| Index | Body Part | Tissue |
+|-------|-----------|--------|
+| 0 | HEAD | Hair |
 
 ## API Reference
 

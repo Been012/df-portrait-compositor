@@ -1,0 +1,2 @@
+[console_scripts]
+df-portrait = df_portrait_compositor.cli:main
