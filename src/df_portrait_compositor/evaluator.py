@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 class DwarfAppearanceData:
     """Appearance data used for condition evaluation.
 
-    All fields are optional — missing data is treated as "no match"
+    All fields are optional -- missing data is treated as "no match"
     for conditions that require it, allowing partial data to still
     produce a portrait (just with fewer layers).
     """
@@ -80,6 +80,7 @@ class SelectedLayer:
     palette_name: str = ""
     palette_index: int = 0
     use_item_palette: bool = False
+    item_color: tuple[int, int, int] | None = None  # RGB from material for item palette
 
 
 def _get_tissue_data(appearance: DwarfAppearanceData, body_part: str, tissue_type: str) -> dict:
@@ -121,7 +122,7 @@ def _get_tissue_data(appearance: DwarfAppearanceData, body_part: str, tissue_typ
             "curly": 0,
         }
 
-    # Beard/chin whiskers — same data as facial hair
+    # Beard/chin whiskers -- same data as facial hair
     if tissue in ("CHIN_WHISKERS", "CHEEK_WHISKERS", "MOUSTACHE_WHISKERS"):
         return {
             "color": appearance.beard_color or appearance.hair_color,
@@ -189,10 +190,15 @@ def _match_tissue(tc: TissueCondition, appearance: DwarfAppearanceData) -> bool:
 
 def _match_bp(bp: BPCondition, appearance: DwarfAppearanceData) -> bool:
     """Check if a body part condition matches."""
+    # BP_MISSING: only matches if the body part is actually missing (injuries).
+    # Assume all parts are present for healthy dwarves -- reject BP_MISSING conditions.
+    if bp.bp_missing:
+        return False
+
     if bp.bp_present:
         if bp.body_part_category and bp.body_part_category not in appearance.body_parts_present:
             # Check by category name (HEAD -> HD token might differ)
-            pass  # Be permissive — assume present unless we know it's missing
+            pass  # Be permissive -- assume present unless we know it's missing
 
     if bp.modifier_type:
         # Map body_part_category + modifier_type to the correct appearance value
@@ -212,7 +218,7 @@ def _match_bp(bp: BPCondition, appearance: DwarfAppearanceData) -> bool:
         elif mod == "BROADNESS" and cat == "NOSE":
             val = appearance.nose_broadness
         else:
-            return True  # Unknown modifier — be permissive
+            return True  # Unknown modifier -- be permissive
 
         if bp.modifier_min is not None and val < bp.modifier_min:
             return False
@@ -235,6 +241,21 @@ def _match_item_worn(ic: ItemCondition, equipment: list[dict]) -> bool:
                 continue
         return True
     return False
+
+
+def _find_matching_item(rule: LayerRule, equipment: list[dict]) -> dict | None:
+    """Find the first equipment item matching any of the rule's item conditions."""
+    for ic in rule.item_conditions:
+        for item in equipment:
+            if ic.slot and item.get("slot", "") != ic.slot:
+                continue
+            if ic.item_type and item.get("item_type", "") != ic.item_type:
+                continue
+            if ic.item_subtypes:
+                if item.get("item_subtype", "") not in ic.item_subtypes:
+                    continue
+            return item
+    return None
 
 
 def _match_random(rule: LayerRule, seed: int) -> bool:
@@ -280,7 +301,7 @@ def _is_shut_off(rule: LayerRule, equipment: list[dict]) -> bool:
 def _matches(rule: LayerRule, appearance: DwarfAppearanceData) -> bool:
     """Check if ALL conditions on a layer rule match the dwarf's appearance."""
 
-    # Syn class / ghost (these are exclusive — zombie rules only match zombies)
+    # Syn class / ghost (these are exclusive -- zombie rules only match zombies)
     if rule.syn_class:
         if not _match_syn_class(rule, appearance):
             return False
@@ -310,6 +331,31 @@ def _matches(rule: LayerRule, appearance: DwarfAppearanceData) -> bool:
     # Item worn conditions
     for ic in rule.item_conditions:
         if not _match_item_worn(ic, appearance.equipment):
+            return False
+
+    # Material conditions (apply to the worn item that matched item_conditions)
+    if rule.material_flag or rule.material_type:
+        matched_item = _find_matching_item(rule, appearance.equipment)
+        if matched_item:
+            if rule.material_flag:
+                item_flags = matched_item.get("material_flags", [])
+                # material_flag can be "FLAG1:FLAG2" (colon-separated, ALL must match)
+                for flag in rule.material_flag.split(":"):
+                    if flag not in item_flags:
+                        return False
+            if rule.material_type:
+                if matched_item.get("material_type", "") != rule.material_type:
+                    return False
+        else:
+            return False  # Material condition but no matching item
+
+    # Item quality check (0=ordinary through 5=masterwork, -1=any)
+    if rule.item_quality >= 0:
+        matched_item = matched_item if (rule.material_flag or rule.material_type) else _find_matching_item(rule, appearance.equipment)
+        if matched_item:
+            if matched_item.get("quality", 0) != rule.item_quality:
+                return False
+        else:
             return False
 
     # Random part index
@@ -361,6 +407,14 @@ def evaluate_layers(
                         tile_x = tc.swap_tile_x
                         tile_y = tc.swap_tile_y
 
+            # Get material color for item palette recoloring
+            item_color = None
+            if rule.use_standard_palette_from_item:
+                matched_item = _find_matching_item(rule, appearance.equipment)
+                if matched_item and matched_item.get("material_color"):
+                    mc = matched_item["material_color"]
+                    item_color = (mc[0], mc[1], mc[2])
+
             selected.append(SelectedLayer(
                 tile_page=tile_page,
                 tile_x=tile_x,
@@ -368,6 +422,7 @@ def evaluate_layers(
                 palette_name=rule.palette_name,
                 palette_index=rule.palette_index,
                 use_item_palette=rule.use_standard_palette_from_item,
+                item_color=item_color,
             ))
 
     return selected

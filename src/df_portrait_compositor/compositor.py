@@ -25,7 +25,47 @@ from df_portrait_compositor.tile_loader import (
 
 logger = logging.getLogger(__name__)
 
-# Tile page name → sprite sheet filename
+
+@lru_cache(maxsize=1)
+def _load_clothes_source_row(df_install: str) -> list[tuple[int, int, int, int]]:
+    """Load the source palette row for clothing tiles.
+
+    Clothing tiles are drawn using cols 9-17 of row 0 from the clothes palette.
+    This is the neutral gray source that gets recolored to the item's color.
+    """
+    palette_path = (
+        Path(df_install) / "data/vanilla/vanilla_creatures_graphics/graphics/images"
+        / "dwarf" / "dwarf_clothes_palettes.png"
+    )
+    img = Image.open(palette_path).convert("RGB")
+    return [(*img.getpixel((x, 0))[:3], 255) for x in range(9, min(18, img.width))]
+
+
+def _generate_clothes_target_row(
+    source_row: list[tuple[int, int, int, int]],
+    target_color: tuple[int, int, int],
+) -> list[tuple[int, int, int, int]]:
+    """Generate a target palette row by tinting the source row with the item color.
+
+    Uses HSV: applies the target color's hue with scaled-down saturation to the
+    source row's brightness structure. This produces naturally muted portrait
+    tones matching DF's subdued clothing aesthetic.
+    """
+    from colorsys import rgb_to_hsv, hsv_to_rgb
+
+    tr, tg, tb = target_color
+    th, ts, _ = rgb_to_hsv(tr / 255, tg / 255, tb / 255)
+    # Scale saturation down for the muted portrait look
+    target_sat = ts * 0.4
+
+    result = []
+    for sr, sg, sb, sa in source_row:
+        _, _, sv = rgb_to_hsv(sr / 255, sg / 255, sb / 255)
+        r, g, b = hsv_to_rgb(th, target_sat, sv)
+        result.append((int(r * 255), int(g * 255), int(b * 255), sa))
+    return result
+
+# Tile page name -> sprite sheet filename
 TILE_PAGE_FILES: dict[str, str] = {
     "PORTRAIT_DWARF_BODY": "dwarf_portrait_body.png",
     "PORTRAIT_DWARF_HAIR": "dwarf_portrait_hair.png",
@@ -82,9 +122,19 @@ def compose_portrait(
     """
     canvas = Image.new("RGBA", (TILE_SIZE, TILE_SIZE), (0, 0, 0, 0))
 
-    rules = _load_rules(df_install)
-    if not rules:
+    all_rules = _load_rules(df_install)
+    if not all_rules:
         return canvas
+
+    # Select the correct layer set based on age
+    # DF: babies (0-1), children (1-12), adults (12+)
+    if appearance.age < 1:
+        target_set = "BABY"
+    elif appearance.age < 12:
+        target_set = "CHILD"
+    else:
+        target_set = "PORTRAIT"
+    rules = [r for r in all_rules if r.layer_set == target_set]
 
     try:
         body_palette = load_palette(df_install, "dwarf_portrait_body_palette.png")
@@ -95,6 +145,12 @@ def compose_portrait(
 
     source_body_row = body_palette[0]
     source_hair_row = hair_palette[0]
+
+    # Load clothes source palette for item recoloring
+    try:
+        source_clothes_row = _load_clothes_source_row(df_install)
+    except FileNotFoundError:
+        source_clothes_row = []
 
     # Evaluate conditions to get matching layers
     layers = evaluate_layers(rules, appearance)
@@ -109,11 +165,14 @@ def compose_portrait(
             tile = crop_tile(sheet, layer.tile_x, layer.tile_y)
 
             # Apply palette recoloring
-            if layer.palette_name == "BODY" and layer.palette_index < len(body_palette):
+            if layer.use_item_palette and layer.item_color and source_clothes_row:
+                # Generate a tinted palette row from the item's material/dye color
+                target_row = _generate_clothes_target_row(source_clothes_row, layer.item_color)
+                tile = recolor_tile(tile, source_clothes_row, target_row)
+            elif layer.palette_name == "BODY" and layer.palette_index < len(body_palette):
                 tile = recolor_tile(tile, source_body_row, body_palette[layer.palette_index])
             elif layer.palette_name == "HAIR" and layer.palette_index < len(hair_palette):
                 tile = recolor_tile(tile, source_hair_row, hair_palette[layer.palette_index])
-            # USE_STANDARD_PALETTE_FROM_ITEM: would need item material color — skip for now
 
             canvas = Image.alpha_composite(canvas, tile)
         except Exception:
@@ -179,6 +238,7 @@ def generate_portrait(
             nose_length=appearance.get("nose_length", 100),
             nose_broadness=appearance.get("nose_broadness", 100),
             is_vampire=appearance.get("is_vampire", False),
+            equipment=appearance.get("equipment", []),
             random_seed=unit_id,
             age=appearance.get("age", 0),
         )

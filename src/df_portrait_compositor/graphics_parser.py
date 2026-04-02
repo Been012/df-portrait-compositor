@@ -12,7 +12,7 @@ File format overview::
     [LG_CONDITION_BP:...]         #   Group-level body part condition
         [BP_PRESENT]
     [LAYER:NAME:TILE_PAGE:X:Y]   # A single sprite layer
-        [CONDITION_CASTE:MALE]    #   Conditions (AND logic — all must match)
+        [CONDITION_CASTE:MALE]    #   Conditions (AND logic -- all must match)
         [CONDITION_TISSUE_LAYER:BY_CATEGORY:PART:TISSUE]
             [TISSUE_MAY_HAVE_COLOR:COLOR1:COLOR2]
             [TISSUE_MIN_LENGTH:N]
@@ -70,6 +70,7 @@ class BPCondition:
 
     body_part_category: str = ""    # e.g. "HEAD"
     bp_present: bool = False
+    bp_missing: bool = False
     modifier_type: str = ""         # e.g. "BROADNESS"
     modifier_min: int | None = None
     modifier_max: int | None = None
@@ -117,6 +118,9 @@ class LayerRule:
     # Shut-off conditions (if item is present, hide this layer)
     shut_off_items: list[ItemCondition] = field(default_factory=list)
 
+    # Quality requirement (-1 = any quality)
+    item_quality: int = -1
+
     # Palette
     palette_name: str = ""      # "BODY" or "HAIR"
     palette_index: int = 0
@@ -141,7 +145,9 @@ def _parse_tag(line: str) -> list[str] | None:
 def parse_portrait_graphics(filepath: str | Path) -> list[LayerRule]:
     """Parse a portrait graphics definition file into LayerRule objects.
 
-    Only parses the adult ``[LAYER_SET:PORTRAIT]`` section.
+    Parses all three age layer sets: BABY, CHILD, and PORTRAIT (adult).
+    Each rule is tagged with its layer_set so the compositor can select
+    the correct set based on the dwarf's age.
     """
     path = Path(filepath)
     if not path.exists():
@@ -161,6 +167,9 @@ def parse_portrait_graphics(filepath: str | Path) -> list[LayerRule]:
     current_bp: BPCondition | None = None
     in_target_set = False
 
+    # Valid portrait layer sets: BABY, CHILD, PORTRAIT (adult)
+    PORTRAIT_SETS = {"BABY", "CHILD", "PORTRAIT"}
+
     for line in lines:
         tag = _parse_tag(line)
         if not tag:
@@ -168,13 +177,13 @@ def parse_portrait_graphics(filepath: str | Path) -> list[LayerRule]:
 
         cmd = tag[0]
 
-        # Track LAYER_SET
+        # Track LAYER_SET -- format: [LAYER_SET:BABY:PORTRAIT], [LAYER_SET:CHILD:PORTRAIT], [LAYER_SET:PORTRAIT]
         if cmd == "LAYER_SET":
             current_layer_set = tag[1] if len(tag) > 1 else ""
-            in_target_set = current_layer_set == "PORTRAIT"
+            in_target_set = current_layer_set in PORTRAIT_SETS
             continue
 
-        # Only parse the adult PORTRAIT set
+        # Only parse portrait-related layer sets
         if not in_target_set:
             continue
 
@@ -279,6 +288,10 @@ def parse_portrait_graphics(filepath: str | Path) -> list[LayerRule]:
             current_layer.random_part_total = int(tag[3]) if len(tag) > 3 else 0
             continue
 
+        if cmd == "ITEM_QUALITY":
+            current_layer.item_quality = int(tag[1]) if len(tag) > 1 else 0
+            continue
+
         if cmd == "CONDITION_MATERIAL_FLAG":
             current_layer.material_flag = tag[1] if len(tag) > 1 else ""
             continue
@@ -323,6 +336,9 @@ def parse_portrait_graphics(filepath: str | Path) -> list[LayerRule]:
         if current_bp is not None:
             if cmd == "BP_PRESENT":
                 current_bp.bp_present = True
+                continue
+            if cmd == "BP_MISSING":
+                current_bp.bp_missing = True
                 continue
             if cmd == "BP_APPEARANCE_MODIFIER_RANGE":
                 # BP_APPEARANCE_MODIFIER_RANGE:BROADNESS:0:99

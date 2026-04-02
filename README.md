@@ -5,10 +5,14 @@ Generate dwarf portrait images from Dwarf Fortress (Steam/Premium) sprite sheets
 ## Features
 
 - Parses DF's `graphics_creatures_portrait_dwarf.txt` into structured layer rules
-- Evaluates 10+ condition types: caste, tissue color/length/shaping/curliness, body part modifiers (head broadness, nose shape, eye shape), equipment, syndromes (vampire, zombie, necromancer, ghost), and randomized part selection
+- **All three age groups**: BABY (age < 1), CHILD (age 1-11), and PORTRAIT (adult 12+) layer sets
+- Evaluates 10+ condition types: caste, tissue color/length/shaping/curliness, body part modifiers (head broadness, nose shape/broadness, eye shape), equipment, syndromes (vampire, zombie, necromancer, ghost), material flags/types, item quality, and randomized part selection
+- BP_MISSING condition support for injury-based layer filtering
 - Implements DF's "first match wins" layer group logic for mutually exclusive alternatives
 - Composites selected tiles onto an RGBA canvas with proper alpha blending
 - Palette recoloring for skin and hair colors using DF's palette PNGs
+- **HSV clothing tinting**: clothing layers use HSV color space to apply the item's material/dye color with naturally muted saturation, matching DF's subdued portrait aesthetic
+- **Creature portraits**: load portrait sprites for 500+ creatures across 6 sprite sheets (domestic, surface, aquatic, animal people, and more)
 - Appearance-hash-based caching so portraits only regenerate when the dwarf's look changes
 - Deterministic random seed (from unit ID) for consistent clothing/feature variation
 
@@ -89,6 +93,64 @@ img = compose_portrait(df_install, appearance, scale=2)
 img.save("portrait.png")
 ```
 
+### Child and Baby Portraits
+
+The compositor automatically selects the correct sprite set based on age:
+
+```python
+# Baby portrait (age < 1)
+baby = DwarfAppearanceData(age=0.5, skin_color="PEACH", random_seed=1)
+img = compose_portrait(df_install, baby)
+
+# Child portrait (age 1-11)
+child = DwarfAppearanceData(age=7, sex="female", skin_color="PEACH", hair_color="BROWN", random_seed=2)
+img = compose_portrait(df_install, child)
+```
+
+### Creature Portraits
+
+Load portrait sprites for any of DF's 500+ creatures:
+
+```python
+from df_portrait_compositor import get_creature_portrait, list_available_creatures
+
+# Get a specific creature's portrait
+img = get_creature_portrait(df_install, "DOG", scale=2)
+if img:
+    img.save("dog_portrait.png")
+
+# Caste-specific portraits (e.g. male/female peacock)
+img = get_creature_portrait(df_install, "BIRD_PEAFOWL_BLUE", caste="MALE")
+
+# List all available creature IDs
+creatures = list_available_creatures(df_install)
+print(f"{len(creatures)} creatures with portraits")
+```
+
+### Clothing with Material Colors
+
+Equipment items with material colors are tinted using HSV color space:
+
+```python
+appearance = DwarfAppearanceData(
+    sex="male",
+    skin_color="PEACH",
+    hair_color="BROWN",
+    equipment=[
+        {
+            "slot": "BODY_UPPER",
+            "item_type": "ARMOR",
+            "item_subtype": "ITEM_ARMOR_SHIRT",
+            "material_flags": ["IS_METAL"],
+            "material_color": [180, 180, 200],  # Steel-gray RGB
+            "quality": 3,
+        },
+    ],
+    random_seed=42,
+)
+img = compose_portrait(df_install, appearance, scale=2)
+```
+
 ### Using generate_portrait for Caching
 
 If you are generating portraits for many dwarves, `generate_portrait` handles caching automatically. It takes a raw appearance dict and a cache directory, and only regenerates when appearance data changes:
@@ -129,7 +191,7 @@ The appearance fields map to data extracted from DF's internal structures via DF
 - **Hair/beard length**: From `unit.appearance.tissue_length` indexed through `caste.bp_appearance.style_part_idx`
 - **Hair/beard shaping**: From `unit.appearance.tissue_style` (0=NEATLY_COMBED, 1=BRAIDED, 2=DOUBLE_BRAIDS, 3=PONY_TAIL, 4=CLEAN_SHAVEN)
 - **Body part modifiers** (head broadness, nose shape, eye shape): From `unit.appearance.bp_modifiers` indexed through `caste.bp_appearance.modifier_idx/part_idx`
-- **Equipment**: From `unit.inventory` items
+- **Equipment**: From `unit.inventory` items with material color via `dfhack.matinfo.decode(item)`
 
 The `dfhack_scripts/` directory contains debug scripts that demonstrate how to read these values:
 
@@ -177,7 +239,7 @@ The indices into `unit.appearance.tissue_length` and `unit.appearance.tissue_sty
 
 #### `compose_portrait(df_install, appearance, scale=2)`
 
-Compose a portrait from sprite sheet layers.
+Compose a portrait from sprite sheet layers. Automatically selects BABY, CHILD, or PORTRAIT layer set based on `appearance.age`.
 
 - **df_install** (`str`): Path to the Dwarf Fortress installation directory.
 - **appearance** (`DwarfAppearanceData`): Dwarf appearance data for condition matching.
@@ -194,6 +256,23 @@ Generate and cache a portrait PNG for a dwarf.
 - **cache_dir** (`Path | None`): Directory to store cached PNGs. Required for output.
 - **Returns**: `Path` to the generated PNG, or `None` on failure.
 
+#### `get_creature_portrait(df_install, creature_id, caste="", scale=2)`
+
+Get a creature's portrait sprite from DF's creature portrait sprite sheets.
+
+- **df_install** (`str`): Path to the DF installation directory.
+- **creature_id** (`str`): DF creature ID (e.g. "DOG", "CAT", "DRAGON").
+- **caste** (`str`): Optional caste for dimorphic species (e.g. "MALE", "FEMALE").
+- **scale** (`int`): Upscale factor. 1 = 96px, 2 = 192px (default).
+- **Returns**: `PIL.Image.Image` (RGBA), or `None` if no portrait found.
+
+#### `list_available_creatures(df_install)`
+
+List all creature IDs that have portrait sprites available.
+
+- **df_install** (`str`): Path to the DF installation directory.
+- **Returns**: `list[str]` of sorted creature ID strings.
+
 ### Data Classes
 
 #### `DwarfAppearanceData`
@@ -204,7 +283,7 @@ Key fields: `sex`, `skin_color`, `hair_color`, `beard_color`, `hair_length`, `ha
 
 #### `SelectedLayer`
 
-Dataclass representing a layer selected for rendering: `tile_page`, `tile_x`, `tile_y`, `palette_name`, `palette_index`, `use_item_palette`.
+Dataclass representing a layer selected for rendering: `tile_page`, `tile_x`, `tile_y`, `palette_name`, `palette_index`, `use_item_palette`, `item_color`.
 
 #### `LayerRule`
 
@@ -214,7 +293,7 @@ Dataclass representing a parsed layer rule from the graphics definition file, in
 
 #### `parse_portrait_graphics(filepath)`
 
-Parse a DF portrait graphics definition file into a list of `LayerRule` objects.
+Parse a DF portrait graphics definition file into a list of `LayerRule` objects. Parses all three age layer sets (BABY, CHILD, PORTRAIT).
 
 #### `evaluate_layers(rules, appearance)`
 
